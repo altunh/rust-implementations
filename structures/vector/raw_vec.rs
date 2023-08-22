@@ -1,25 +1,18 @@
 use std::alloc::handle_alloc_error;
 use std::alloc::Layout;
 use std::ptr::NonNull;
-use std::{alloc, cmp, mem};
+use std::{alloc, mem, cmp};
+
+use TryReserveError::*;
 
 pub enum TryReserveError {
     CapacityOverflow,
     AllocError { layout: alloc::Layout },
 }
 
-use TryReserveError::*;
-
-fn capacity_overflow() -> ! {
-    panic!("capacity overflow")
-}
-
-fn handle_reserve(result: Result<(), TryReserveError>) {
-    match result {
-        Err(CapacityOverflow) => capacity_overflow(),
-        Err(AllocError { layout }) => handle_alloc_error(layout),
-        Ok(()) => (),
-    }
+enum AllocInit {
+    Uninitialized,
+    Zeroed
 }
 
 pub struct RawVec<T> {
@@ -37,11 +30,23 @@ impl<T> RawVec<T> {
         _ => 1,
     };
 
-    pub fn new() -> Self {
+    pub const NEW: Self = Self::new();
+
+    pub const fn new() -> Self {
         Self {
             ptr: NonNull::<T>::dangling(),
             cap: 0,
         }
+    }
+
+    #[inline]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self::allocate_new(capacity, AllocInit::Uninitialized)
+    }
+
+    #[inline]
+    pub fn with_capacity_zeroed(capacity: usize) -> Self {
+        Self::allocate_new(capacity, AllocInit::Zeroed)
     }
 
     #[inline]
@@ -51,7 +56,7 @@ impl<T> RawVec<T> {
 
     #[inline(always)]
     pub fn capacity(&self) -> usize {
-        if self.is_zst() {
+        if Self::is_zst() {
             usize::MAX as usize
         } else {
             self.cap
@@ -59,7 +64,7 @@ impl<T> RawVec<T> {
     }
 
     fn layout(&self) -> Option<Layout> {
-        if self.is_zst() || self.cap == 0 {
+        if Self::is_zst() || self.cap == 0 {
             return None;
         }
 
@@ -73,19 +78,18 @@ impl<T> RawVec<T> {
         }
     }
 
-    #[allow(dead_code)]
-    fn memory(&self) -> Option<(NonNull<u8>, Layout)> {
-        self.layout().map(|layout| (self.ptr.cast().into(), layout))
+    fn memory(&self) -> Option<(*mut u8, Layout)> {
+        self.layout().map(|layout| (self.ptr() as *mut u8, layout))
     }
 
     #[inline(always)]
-    fn is_zst(&self) -> bool {
+    fn is_zst() -> bool {
         mem::size_of::<T>() == 0
     }
 
     #[inline(always)]
     fn handle_zst_overflow(&self) -> Result<(), TryReserveError> {
-        if self.is_zst() {
+        if Self::is_zst() {
             return Err(CapacityOverflow);
         } else {
             Ok(())
@@ -98,12 +102,43 @@ impl<T> RawVec<T> {
         self.cap = cap;
     }
 
+    fn try_allocate_new(capacity: usize, init: AllocInit) -> Result<Self, TryReserveError> {
+        if Self::is_zst() || capacity == 0 {
+            return Ok(Self::new());
+        }
+
+        let layout = Layout::array::<T>(capacity).map_err(|_| CapacityOverflow)?;
+        // new layout allocation should not exceed isize::MAX bytes
+        if layout.size() > isize::MAX as usize {
+            return Err(CapacityOverflow);
+        }
+
+        let ptr = match init {
+            AllocInit::Uninitialized => unsafe { alloc::alloc(layout) },
+            AllocInit::Zeroed => unsafe { alloc::alloc_zeroed(layout) }
+        };
+
+        // if an allocation error occurred, pointer would be null
+        if ptr.is_null() {
+            Err(AllocError { layout })
+        } else {
+            Ok(Self {
+                ptr: unsafe { NonNull::new_unchecked(ptr as *mut T) },
+                cap: capacity
+            })
+        }
+    }
+
+    fn allocate_new(capacity: usize, init: AllocInit) -> Self {
+        handle_reserve_unwrap(Self::try_allocate_new(capacity, init))
+    }
+
     fn checked_alloc_cap(&mut self, cap: usize) -> Result<(), TryReserveError> {
         // caller should ensure that capacity doesn't overflow usize
         let layout = Layout::array::<T>(cap).map_err(|_| CapacityOverflow)?;
         // new layout allocation should not exceed isize::MAX bytes
         if layout.size() > isize::MAX as usize {
-            return Err(AllocError { layout });
+            return Err(CapacityOverflow);
         }
 
         // get pointer to allocated/reallocated memory
@@ -141,7 +176,26 @@ impl<T> RawVec<T> {
         self.checked_alloc_cap(cap)
     }
 
-    #[allow(dead_code)]
+    #[inline(never)]
+    pub fn reserve_for_push(&mut self, len: usize) {
+        handle_reserve(self.grow(len, 1));
+    }
+
+    #[inline]
+    pub fn reserve(&mut self, len: usize, additional: usize) {
+        if self.needs_to_grow(len, additional) {
+            handle_reserve(self.grow(len, additional));
+        }
+    }
+
+    pub fn try_reserve(&mut self, len: usize, additional: usize) -> Result<(), TryReserveError> {
+        if self.needs_to_grow(len, additional) {
+            self.grow(len, additional)
+        } else {
+            Ok(())
+        }
+    }
+
     #[inline(never)]
     fn grow_exact(&mut self, len: usize, additional: usize) -> Result<(), TryReserveError> {
         // handle zero sized type
@@ -154,9 +208,8 @@ impl<T> RawVec<T> {
         self.checked_alloc_cap(cap)
     }
 
-    #[inline(never)]
-    pub fn reserve_for_push(&mut self, len: usize) {
-        handle_reserve(self.grow(len, 1));
+    pub fn reserve_exact(&mut self, len: usize, additional: usize) {
+        handle_reserve(self.try_reserve_exact(len, additional));
     }
 
     pub fn try_reserve_exact(
@@ -170,21 +223,26 @@ impl<T> RawVec<T> {
             Ok(())
         }
     }
-
-    #[inline(never)]
-    pub fn reserve_exact(&mut self, len: usize, additional: usize) {
-        handle_reserve(self.try_reserve_exact(len, additional));
-    }
 }
 
 impl<T> Drop for RawVec<T> {
     fn drop(&mut self) {
-        if let Some(layout) = self.layout() {
-            unsafe {
-                alloc::dealloc(self.ptr() as *mut u8, layout);
-            }
+        if let Some((ptr, layout)) = self.memory() {
+            unsafe { alloc::dealloc(ptr, layout) };
         }
     }
+}
+
+fn handle_reserve_unwrap<T>(result: Result<T, TryReserveError>) -> T {
+    match result {
+        Err(CapacityOverflow) => panic!("capacity overflow"),
+        Err(AllocError { layout }) => handle_alloc_error(layout),
+        Ok(value) => value,
+    }
+}
+
+fn handle_reserve<T>(result: Result<T, TryReserveError>) {
+    handle_reserve_unwrap(result);
 }
 
 #[cfg(test)]

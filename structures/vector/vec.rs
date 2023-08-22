@@ -1,5 +1,9 @@
-use std::ptr;
+use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
+use std::ops::{Deref, DerefMut};
+use std::{ptr, slice};
 
+use super::into_iter::IntoIter;
 use super::raw_vec::RawVec;
 
 pub struct Vec<T> {
@@ -8,9 +12,23 @@ pub struct Vec<T> {
 }
 
 impl<T> Vec<T> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            buf: RawVec::new(),
+            buf: RawVec::NEW,
+            len: 0,
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            buf: RawVec::with_capacity(capacity),
+            len: 0,
+        }
+    }
+
+    pub fn with_capacity_zeroed(capacity: usize) -> Self {
+        Self {
+            buf: RawVec::with_capacity_zeroed(capacity),
             len: 0,
         }
     }
@@ -31,8 +49,13 @@ impl<T> Vec<T> {
     }
 
     #[inline]
+    pub fn as_ptr(&self) -> *const T {
+        self.buf.ptr()
+    }
+
+    #[inline]
     pub(crate) unsafe fn set_len(&mut self, len: usize) {
-        debug_assert!(len <= self.capacity());
+        assert!(len <= self.capacity());
         self.len = len;
     }
 
@@ -42,8 +65,9 @@ impl<T> Vec<T> {
             self.buf.reserve_for_push(self.len);
         }
 
-        // compute and write to the end of the pointer
-        // SAFETY: since here len < cap, Vec::grow ensures that offset is valid
+        // p.add(capacity) is the end of the last byte of allocated space
+        // you can write an element T, at most, at location p.add(capacity - 1)
+        // SAFETY: offset is valid, since len < capacity, so len <= (capacity - 1) < capacity
         unsafe {
             let end = self.as_mut_ptr().add(self.len);
             ptr::write(end, value);
@@ -56,24 +80,88 @@ impl<T> Vec<T> {
             return None;
         }
 
+        // p.add(capacity) is the end of the last byte of allocated space
+        // you can read an element T, at most, at location p.add(capacity - 1)
+        // SAFETY: offset is valid, since len <= capacity, so (len - 1) <= (capacity - 1) < capacity
         self.len -= 1;
         unsafe {
-            let end = self.as_mut_ptr().add(self.len);
+            let end = self.as_ptr().add(self.len);
             Some(ptr::read(end))
         }
     }
 
-    // pub fn insert(&mut self, index: usize, element: T) {
-    //     todo!()
-    // }
+    pub fn insert(&mut self, index: usize, element: T) {
+        // check bounds
+        let len = self.len();
+        assert!(index <= len, "index out of bounds");
 
-    // pub fn remove(&mut self, index: usize) -> T {
-    //     todo!()
-    // }
+        // reserve space for the new element
+        if len == self.capacity() {
+            self.buf.reserve(len, 1);
+        }
 
-    // pub fn swap_remove(&mut self, index: usize) -> T {
-    //     todo!()
-    // }
+        // p.add(capacity) is the end of the last byte of allocated space
+        // you can write an element T, at most, at location p.add(capacity - 1)
+        // SAFETY: offset is valid, since index <= len <= (capacity - 1) < capacity
+        unsafe {
+            {
+                let p = self.as_mut_ptr().add(index);
+                // here, index < len, so (index + 1) <= len <= (capacity - 1) < capacity
+                if index < len {
+                    ptr::copy(p, p.add(1), len - index);
+                }
+                ptr::write(p, element);
+            }
+            self.set_len(len + 1);
+        }
+    }
+
+    pub fn remove(&mut self, index: usize) -> T {
+        // check bounds
+        let len = self.len();
+        assert!(index < len, "index out of bounds");
+
+        // p.add(capacity) is the end of the last byte of allocated space
+        // you can write an element T, at most, at location p.add(capacity - 1)
+        // SAFETY: offset is valid, since index < len <= (capacity - 1) < capacity
+        unsafe {
+            let value: T;
+            {
+                let p = self.as_mut_ptr().add(index);
+                value = ptr::read(p);
+                ptr::copy(p.add(1), p, len - index - 1);
+            }
+            self.set_len(len - 1);
+            value
+        }
+    }
+
+    pub fn swap_remove(&mut self, index: usize) -> T {
+        // check bounds
+        let len = self.len();
+        assert!(index < len, "index out of bounds");
+
+        unsafe {
+            let value = ptr::read(self.as_ptr().add(index));
+            let base_ptr = self.as_mut_ptr();
+            ptr::copy(base_ptr.add(len - 1), base_ptr.add(index), 1);
+            self.set_len(len - 1);
+            value
+        }
+    }
+}
+
+impl<T> Deref for Vec<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) }
+    }
+}
+
+impl<T> DerefMut for Vec<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), self.len()) }
+    }
 }
 
 #[cfg(test)]
