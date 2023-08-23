@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-path = "lib.rs"
+path = "src/lib.rs"
 
-[dependencies]
+[[test]]
+name = "structures_test"
+path = "tests/lib.rs"

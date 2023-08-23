@@ -1,7 +1,7 @@
 use std::alloc::handle_alloc_error;
 use std::alloc::Layout;
 use std::ptr::NonNull;
-use std::{alloc, mem, cmp};
+use std::{alloc, cmp, mem};
 
 use TryReserveError::*;
 
@@ -12,7 +12,7 @@ pub enum TryReserveError {
 
 enum AllocInit {
     Uninitialized,
-    Zeroed
+    Zeroed,
 }
 
 pub struct RawVec<T> {
@@ -115,7 +115,7 @@ impl<T> RawVec<T> {
 
         let ptr = match init {
             AllocInit::Uninitialized => unsafe { alloc::alloc(layout) },
-            AllocInit::Zeroed => unsafe { alloc::alloc_zeroed(layout) }
+            AllocInit::Zeroed => unsafe { alloc::alloc_zeroed(layout) },
         };
 
         // if an allocation error occurred, pointer would be null
@@ -124,7 +124,7 @@ impl<T> RawVec<T> {
         } else {
             Ok(Self {
                 ptr: unsafe { NonNull::new_unchecked(ptr as *mut T) },
-                cap: capacity
+                cap: capacity,
             })
         }
     }
@@ -243,33 +243,4 @@ fn handle_reserve_unwrap<T>(result: Result<T, TryReserveError>) -> T {
 
 fn handle_reserve<T>(result: Result<T, TryReserveError>) {
     handle_reserve_unwrap(result);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::RawVec;
-
-    #[test]
-    fn reserve_push() {
-        let mut rv = RawVec::<usize>::new();
-        rv.reserve_for_push(0);
-        assert_eq!(rv.capacity(), 4);
-        rv.reserve_for_push(1);
-        assert_eq!(rv.capacity(), 8);
-        rv.reserve_for_push(2);
-        assert_eq!(rv.capacity(), 16);
-    }
-
-    #[test]
-    fn reserve_exact() {
-        let mut rv = RawVec::<usize>::new();
-        rv.reserve_exact(0, 9);
-        assert_eq!(rv.capacity(), 9);
-        rv.reserve_for_push(9);
-        assert_eq!(rv.capacity(), 18);
-        rv.reserve_for_push(10);
-        assert_eq!(rv.capacity(), 36);
-        rv.reserve_exact(11, 30);
-        assert_eq!(rv.capacity(), 41);
-    }
 }
