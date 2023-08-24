@@ -141,10 +141,6 @@ fn cell_does_not_clone() {
 
     impl Clone for Foo {
         fn clone(&self) -> Foo {
-            // Using Cell in any way should never cause clone() to be
-            // invoked -- after all, that would permit evil user code to
-            // abuse `Cell` and trigger crashes.
-
             panic!();
         }
     }

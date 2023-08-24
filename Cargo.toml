@@ -1,4 +1,5 @@
 [workspace]
+name = "rust-implementations"
 
 members = [
     "structures"
