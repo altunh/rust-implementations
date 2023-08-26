@@ -3,8 +3,8 @@ use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::{ptr, slice};
 
-use super::into_iter::IntoIter;
-use super::raw_vec::RawVec;
+use super::iter::IntoIter;
+use super::rawvec::RawVec;
 
 pub struct Vec<T> {
     buf: RawVec<T>,

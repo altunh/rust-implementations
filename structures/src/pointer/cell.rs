@@ -2,15 +2,8 @@ use super::UnsafeCell;
 
 use std::cmp::Ordering;
 use std::fmt::{self, Debug, Display};
+use std::ops::{CoerceUnsized, DispatchFromDyn};
 use std::ptr;
-
-/*
- * TODO:
- * - [ ] impl CoerceUnsized for Cell
- * - [ ] impl DispatchFromDyn for Cell
- * - [ ] impl Cell<[T]>
- * - [ ] impl Cell<[T; N]>
- */
 
 #[repr(transparent)]
 pub struct Cell<T: ?Sized> {
@@ -159,5 +152,21 @@ impl<T: Debug + Copy> Debug for Cell<T> {
 impl<T: Display + Copy> Display for Cell<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.get())
+    }
+}
+
+impl<T: CoerceUnsized<U>, U> CoerceUnsized<Cell<U>> for Cell<T> {}
+
+impl<T: DispatchFromDyn<U>, U> DispatchFromDyn<Cell<U>> for Cell<T> {}
+
+impl<T> Cell<[T]> {
+    pub fn as_slice_of_cells(&self) -> &[Cell<T>] {
+        unsafe { &*(self as *const Cell<[T]> as *const [Cell<T>]) }
+    }
+}
+
+impl<T, const N: usize> Cell<[T; N]> {
+    pub fn as_array_of_cells(&self) -> &[Cell<T>; N] {
+        unsafe { &*(self as *const Cell<[T; N]> as *const [Cell<T>; N]) }
     }
 }

@@ -1,6 +1,6 @@
-mod raw_vec;
+mod rawvec;
 mod vec;
-mod into_iter;
+mod iter;
 
 pub use vec::Vec;
-pub use raw_vec::RawVec;
+pub use rawvec::RawVec;
