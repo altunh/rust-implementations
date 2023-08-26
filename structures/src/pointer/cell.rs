@@ -1,4 +1,5 @@
-use std::cell::UnsafeCell;
+use super::UnsafeCell;
+
 use std::cmp::Ordering;
 use std::fmt::{self, Debug, Display};
 use std::ptr;

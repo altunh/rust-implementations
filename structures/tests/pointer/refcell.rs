@@ -1,5 +1,5 @@
 // use std::cell::{RefCell, Ref, RefMut};
-use structures::pointer::RefCell;
+use structures::pointer::{Ref, RefCell, RefMut};
 
 #[test]
 fn ref_and_refmut_have_sensible_show() {

@@ -1,6 +1,6 @@
-mod unsafe_cell;
 mod cell;
-mod ref_cell;
+mod refcell;
 
+pub use std::cell::UnsafeCell;
 pub use cell::Cell;
-pub use ref_cell::RefCell;
+pub use refcell::{RefCell, Ref, RefMut};
