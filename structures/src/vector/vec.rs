@@ -1,11 +1,12 @@
 use std::marker::PhantomData;
-use std::mem;
-use std::ops::{Deref, DerefMut};
+use std::mem::{self, ManuallyDrop};
+use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::ptr::NonNull;
+use std::slice::SliceIndex;
 use std::{ptr, slice};
 
 use super::iter::IntoIter;
-use super::rawvec::RawVec;
+use super::rawvec::{RawVec, TryReserveError};
 
 pub struct Vec<T> {
     buf: RawVec<T>,
@@ -13,6 +14,7 @@ pub struct Vec<T> {
 }
 
 impl<T> Vec<T> {
+    #[inline]
     pub const fn new() -> Self {
         Self {
             buf: RawVec::NEW,
@@ -20,6 +22,7 @@ impl<T> Vec<T> {
         }
     }
 
+    #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             buf: RawVec::with_capacity(capacity),
@@ -27,6 +30,7 @@ impl<T> Vec<T> {
         }
     }
 
+    #[inline]
     pub fn with_capacity_zeroed(capacity: usize) -> Self {
         Self {
             buf: RawVec::with_capacity_zeroed(capacity),
@@ -34,6 +38,7 @@ impl<T> Vec<T> {
         }
     }
 
+    #[inline]
     pub fn from_raw_parts(buf: *mut T, len: usize, capacity: usize) -> Vec<T> {
         Vec {
             buf: RawVec::from_raw_parts(buf, capacity),
@@ -156,24 +161,97 @@ impl<T> Vec<T> {
             value
         }
     }
+
+    #[inline]
+    pub fn into_raw_parts(self) -> (*mut T, usize, usize) {
+        let mut m = ManuallyDrop::new(self);
+        (m.as_mut_ptr(), m.len(), m.capacity())
+    }
+
+    pub fn reserve(&mut self, additional: usize) {
+        self.buf.reserve(self.len, additional);
+    }
+
+    pub fn reserve_exact(&mut self, additional: usize) {
+        self.buf.reserve_exact(self.len, additional);
+    }
+
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), TryReserveError> {
+        self.buf.try_reserve(self.len, additional)
+    }
+
+    pub fn try_reserve_exact(&mut self, additional: usize) -> Result<(), TryReserveError> {
+        self.buf.try_reserve_exact(self.len, additional)
+    }
+
+    #[inline]
+    pub fn as_slice(&self) -> &[T] {
+        self
+    }
+
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        self
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        let elems: *mut [T] = self.as_mut_slice();
+        unsafe {
+            self.len = 0;
+            ptr::drop_in_place(elems);
+        }
+    }
 }
 
 impl<T> Deref for Vec<T> {
     type Target = [T];
+
+    #[inline]
     fn deref(&self) -> &[T] {
         unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) }
     }
 }
 
 impl<T> DerefMut for Vec<T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut [T] {
         unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), self.len()) }
     }
 }
 
 impl<T> Default for Vec<T> {
+    #[inline]
     fn default() -> Self {
         Vec::new()
+    }
+}
+
+impl<T> AsRef<Vec<T>> for Vec<T> {
+    #[inline]
+    fn as_ref(&self) -> &Vec<T> {
+        self
+    }
+}
+
+impl<T> AsMut<Vec<T>> for Vec<T> {
+    #[inline]
+    fn as_mut(&mut self) -> &mut Vec<T> {
+        self
+    }
+}
+
+impl<T> AsRef<[T]> for Vec<T> {
+    #[inline]
+    fn as_ref(&self) -> &[T] {
+        self
+    }
+}
+
+impl<T> AsMut<[T]> for Vec<T> {
+    #[inline]
+    fn as_mut(&mut self) -> &mut [T] {
+        self
     }
 }
 
@@ -199,5 +277,75 @@ impl<T> IntoIterator for Vec<T> {
             }
         }
     }
-    
+}
+
+impl<'a, T> IntoIterator for &'a Vec<T> {
+    type Item = &'a T;
+    type IntoIter = slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut Vec<T> {
+    type Item = &'a mut T;
+    type IntoIter = slice::IterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
+impl<T: Copy> From<&[T]> for Vec<T> {
+    fn from(value: &[T]) -> Self {
+        to_vec_copy(value)
+    }
+}
+
+impl<T: Copy> From<&mut [T]> for Vec<T> {
+    fn from(value: &mut [T]) -> Self {
+        to_vec_copy(value)
+    }
+}
+
+impl From<&str> for Vec<u8> {
+    fn from(value: &str) -> Self {
+        From::from(value.as_bytes())
+    }
+}
+
+impl<T> Drop for Vec<T> {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe {
+            let p: *mut [T] = ptr::slice_from_raw_parts_mut(self.as_mut_ptr(), self.len());
+            ptr::drop_in_place(p);
+        }
+    }
+}
+
+impl<T, I: SliceIndex<[T]>> Index<I> for Vec<T> {
+    type Output = I::Output;
+
+    #[inline]
+    fn index(&self, index: I) -> &Self::Output {
+        Index::index(&**self, index)
+    }
+}
+
+impl<T, I: SliceIndex<[T]>> IndexMut<I> for Vec<T> {
+    #[inline]
+    fn index_mut(&mut self, index: I) -> &mut Self::Output {
+        IndexMut::index_mut(&mut **self, index)
+    }
+}
+
+fn to_vec_copy<T: Copy>(s: &[T]) -> Vec<T> {
+    let mut v = Vec::with_capacity(s.len());
+    unsafe {
+        s.as_ptr().copy_to_nonoverlapping(v.as_mut_ptr(), s.len());
+        v.set_len(s.len());
+    }
+    v
 }

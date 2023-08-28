@@ -251,3 +251,4 @@ fn handle_reserve_unwrap<T>(result: Result<T, TryReserveError>) -> T {
 fn handle_reserve<T>(result: Result<T, TryReserveError>) {
     handle_reserve_unwrap(result);
 }
+
