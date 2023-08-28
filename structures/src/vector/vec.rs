@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
-use std::mem::ManuallyDrop;
+use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::ptr::NonNull;
 use std::{ptr, slice};
 
 use super::iter::IntoIter;
@@ -30,6 +31,13 @@ impl<T> Vec<T> {
         Self {
             buf: RawVec::with_capacity_zeroed(capacity),
             len: 0,
+        }
+    }
+
+    pub fn from_raw_parts(buf: *mut T, len: usize, capacity: usize) -> Vec<T> {
+        Vec {
+            buf: RawVec::from_raw_parts(buf, capacity),
+            len,
         }
     }
 
@@ -79,7 +87,6 @@ impl<T> Vec<T> {
         if self.len == 0 {
             return None;
         }
-
         // p.add(capacity) is the end of the last byte of allocated space
         // you can read an element T, at most, at location p.add(capacity - 1)
         // SAFETY: offset is valid, since len <= capacity, so (len - 1) <= (capacity - 1) < capacity
@@ -162,4 +169,35 @@ impl<T> DerefMut for Vec<T> {
     fn deref_mut(&mut self) -> &mut [T] {
         unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), self.len()) }
     }
+}
+
+impl<T> Default for Vec<T> {
+    fn default() -> Self {
+        Vec::new()
+    }
+}
+
+impl<T> IntoIterator for Vec<T> {
+    type Item = T;
+    type IntoIter = IntoIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        unsafe {
+            let mut m = mem::ManuallyDrop::new(self);
+            let ptr = m.as_mut_ptr();
+            let end: *const T = if mem::size_of::<T>() == 0 {
+                ptr.wrapping_offset(m.len() as isize)
+            } else {
+                ptr.add(m.len())
+            };
+            let cap = m.buf.capacity();
+            IntoIter {
+                buf: NonNull::new_unchecked(ptr),
+                phantom: PhantomData,
+                cap,
+                ptr,
+                end,
+            }
+        }
+    }
+    
 }

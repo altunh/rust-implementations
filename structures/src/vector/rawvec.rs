@@ -223,6 +223,13 @@ impl<T> RawVec<T> {
             Ok(())
         }
     }
+
+    pub fn from_raw_parts(value: *mut T, capacity: usize) -> RawVec<T> {
+        RawVec {
+            ptr: unsafe { NonNull::new_unchecked(value) },
+            cap: capacity,
+        }
+    }
 }
 
 impl<T> Drop for RawVec<T> {

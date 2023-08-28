@@ -4,3 +4,4 @@ mod iter;
 
 pub use vec::Vec;
 pub use rawvec::RawVec;
+pub use iter::IntoIter;
