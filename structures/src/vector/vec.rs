@@ -3,7 +3,7 @@ use std::mem::{self, ManuallyDrop};
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::ptr::NonNull;
 use std::slice::SliceIndex;
-use std::{ptr, slice};
+use std::{cmp, ptr, slice};
 
 use super::iter::IntoIter;
 use super::rawvec::{RawVec, TryReserveError};
@@ -202,6 +202,22 @@ impl<T> Vec<T> {
             ptr::drop_in_place(elems);
         }
     }
+
+    pub fn extend<I: Iterator<Item = T>>(&mut self, mut iterator: I) {
+        // Main loop after optimizations taken from Vec::extend_desugared.
+        // Writes the rest of the elements from the iterator to the vector.
+        while let Some(element) = iterator.next() {
+            let len = self.len();
+            if len == self.capacity() {
+                let (lower, _) = iterator.size_hint();
+                self.reserve(lower.saturating_add(1));
+            }
+            unsafe {
+                ptr::write(self.as_mut_ptr(), element);
+                self.set_len(len + 1);
+            }
+        }
+    }
 }
 
 impl<T> Deref for Vec<T> {
@@ -284,7 +300,7 @@ impl<'a, T> IntoIterator for &'a Vec<T> {
     type IntoIter = slice::Iter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.iter()
+        let v = *self;
     }
 }
 
@@ -297,6 +313,32 @@ impl<'a, T> IntoIterator for &'a mut Vec<T> {
     }
 }
 
+impl<T> FromIterator<T> for Vec<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut iterator = iter.into_iter();
+
+        // Light optimization taken from SpecFromIterNested::from_iter.
+        // Determines initial capacity using a size hint.
+        let mut vector = match iterator.next() {
+            None => Vec::new(),
+            Some(element) => {
+                let (lower, _) = iterator.size_hint();
+                let initial_capacity =
+                    cmp::max(RawVec::<T>::MIN_NON_ZERO_CAP, lower.saturating_add(1));
+                let mut vector = Vec::with_capacity(initial_capacity);
+                unsafe {
+                    ptr::write(vector.as_mut_ptr(), element);
+                    vector.set_len(1);
+                }
+                vector
+            }
+        };
+
+        vector.extend(iterator);
+        vector
+    }
+}
+
 impl<T: Copy> From<&[T]> for Vec<T> {
     fn from(value: &[T]) -> Self {
         to_vec_copy(value)
@@ -306,6 +348,12 @@ impl<T: Copy> From<&[T]> for Vec<T> {
 impl<T: Copy> From<&mut [T]> for Vec<T> {
     fn from(value: &mut [T]) -> Self {
         to_vec_copy(value)
+    }
+}
+
+impl<T> From<Box<[T]>> for Vec<T> {
+    fn from(value: Box<[T]>) -> Self {
+        box_into_vec(value)
     }
 }
 
@@ -348,4 +396,10 @@ fn to_vec_copy<T: Copy>(s: &[T]) -> Vec<T> {
         v.set_len(s.len());
     }
     v
+}
+
+fn box_into_vec<T>(b: Box<[T]>) -> Vec<T> {
+    let len = b.len();
+    let b = Box::into_raw(b);
+    Vec::from_raw_parts(b as *mut T, len, len)
 }

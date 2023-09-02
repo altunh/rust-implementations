@@ -1,6 +1,5 @@
 [workspace]
 name = "rust-implementations"
+resolver = "2"
 
-members = [
-    "structures"
-]
+members = ["structures", "patterns"]

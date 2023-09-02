@@ -11,11 +11,6 @@ pub struct IntoIter<T> {
 }
 
 impl<T> IntoIter<T> {
-    #[inline(always)]
-    fn is_zst() -> bool {
-        mem::size_of::<T>() == 0
-    }
-
     pub fn as_raw_mut_slice(&mut self) -> *mut [T] {
         ptr::slice_from_raw_parts_mut(self.ptr as *mut T, self.len())
     }
@@ -44,7 +39,7 @@ impl<T> Iterator for IntoIter<T> {
     fn next(&mut self) -> Option<T> {
         if self.ptr == self.end {
             None
-        } else if IntoIter::<T>::is_zst() {
+        } else if is_zst::<T>() {
             self.end = self.end.wrapping_offset((1 as isize).wrapping_neg());
             Some(unsafe { mem::zeroed() })
         } else {
@@ -71,7 +66,7 @@ impl<T> DoubleEndedIterator for IntoIter<T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.ptr == self.end {
             None
-        } else if IntoIter::<T>::is_zst() {
+        } else if is_zst::<T>() {
             self.end = self.end.wrapping_offset((1 as isize).wrapping_neg());
             Some(unsafe { mem::zeroed() })
         } else {
@@ -89,10 +84,11 @@ impl<T> Default for IntoIter<T> {
 
 impl<T: Clone> Clone for IntoIter<T> {
     fn clone(&self) -> Self {
-        // TODO: Clone for IntoIter
         todo!()
     }
 }
 
-unsafe impl<T> Send for IntoIter<T> {}
-unsafe impl<T> Sync for IntoIter<T> {}
+#[inline(always)]
+const fn is_zst<T>() -> bool {
+    mem::size_of::<T>() == 0
+}

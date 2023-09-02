@@ -56,7 +56,7 @@ impl<T> RawVec<T> {
 
     #[inline(always)]
     pub fn capacity(&self) -> usize {
-        if Self::is_zst() {
+        if is_zst::<T>() {
             usize::MAX as usize
         } else {
             self.cap
@@ -64,7 +64,7 @@ impl<T> RawVec<T> {
     }
 
     fn layout(&self) -> Option<Layout> {
-        if Self::is_zst() || self.cap == 0 {
+        if is_zst::<T>() || self.cap == 0 {
             return None;
         }
 
@@ -83,13 +83,8 @@ impl<T> RawVec<T> {
     }
 
     #[inline(always)]
-    fn is_zst() -> bool {
-        mem::size_of::<T>() == 0
-    }
-
-    #[inline(always)]
     fn handle_zst_overflow(&self) -> Result<(), TryReserveError> {
-        if Self::is_zst() {
+        if is_zst::<T>() {
             return Err(CapacityOverflow);
         } else {
             Ok(())
@@ -103,7 +98,7 @@ impl<T> RawVec<T> {
     }
 
     fn try_allocate_new(capacity: usize, init: AllocInit) -> Result<Self, TryReserveError> {
-        if Self::is_zst() || capacity == 0 {
+        if is_zst::<T>() || capacity == 0 {
             return Ok(Self::new());
         }
 
@@ -252,3 +247,7 @@ fn handle_reserve<T>(result: Result<T, TryReserveError>) {
     handle_reserve_unwrap(result);
 }
 
+#[inline(always)]
+const fn is_zst<T>() -> bool {
+    mem::size_of::<T>() == 0
+}
