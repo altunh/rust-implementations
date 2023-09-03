@@ -19,9 +19,9 @@ mod tests {
 
     #[test]
     fn simple() {
-        let mut db = DATABASE.lock().unwrap();
+        let db = DATABASE.lock().unwrap();
         db.query("SELECT * from users");
-        assert_eq!(db.query_count(), 1);
+        assert_eq!(db.count(), 1);
     }
 
     #[test]
@@ -34,6 +34,6 @@ mod tests {
         });
         let _ = t1.join();
         let _ = t2.join();
-        assert_eq!(DATABASE.lock().unwrap().query_count(), 3);
+        assert_eq!(DATABASE.lock().unwrap().count(), 3);
     }
 }
