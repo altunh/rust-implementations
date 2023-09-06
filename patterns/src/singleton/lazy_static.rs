@@ -18,22 +18,49 @@ mod tests {
     use std::thread;
 
     #[test]
-    fn simple() {
-        let db = DATABASE.lock().unwrap();
-        db.query("SELECT * from users");
+    fn select_insert() {
+        let mut db = DATABASE.lock().unwrap();
+        db.select("Get Users");
         assert_eq!(db.count(), 1);
+        db.insert("Insert User");
+        assert_eq!(db.count(), 2);
+        db.reset();
     }
 
     #[test]
-    fn multi_thread() {
-        let t1 = thread::spawn(|| {
-            DATABASE.lock().unwrap().query("Query from thread 1");
-        });
-        let t2 = thread::spawn(|| {
-            DATABASE.lock().unwrap().query("Query from thread 2");
-        });
-        let _ = t1.join();
-        let _ = t2.join();
-        assert_eq!(DATABASE.lock().unwrap().count(), 3);
+    fn multithreaded() {
+        let mut handles = Vec::new();
+        for i in 1..=5 {
+            let handle = thread::spawn(move || {
+                DATABASE
+                    .lock()
+                    .unwrap()
+                    .select(&format!("Query from thread {i}"));
+            });
+            handles.push(handle);
+        }
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        assert_eq!(DATABASE.lock().unwrap().count(), 5);
+        DATABASE.lock().unwrap().reset();
+    }
+
+    #[test]
+    fn multithreaded_fail() {
+        let mut handles = Vec::new();
+        for i in 1..=5 {
+            let handle = thread::spawn(move || {
+                DATABASE
+                    .lock()
+                    .unwrap()
+                    .select(&format!("Query from thread {i}"));
+            });
+            handles.push(handle);
+        }
+        DATABASE.lock().unwrap().insert("SOME INSERT");
+        for handle in handles {
+            handle.join().unwrap();
+        }
     }
 }
