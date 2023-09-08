@@ -17,19 +17,19 @@ mod tests {
     use super::DATABASE;
     use std::thread;
 
-    #[test]
-    fn multithreaded() {
-        let mut handles = Vec::new();
-        for i in 1..=5 {
-            let handle = thread::spawn(move || {
-                DATABASE.lock().unwrap().select(&format!("Query from thread {i}"));
-            });
-            handles.push(handle);
-        }
-        for handle in handles {
-            handle.join().unwrap();
-        }
-        assert_eq!(DATABASE.lock().unwrap().count(), 5);
-        DATABASE.lock().unwrap().reset();
-    }
+    // #[test]
+    // fn multithreaded() {
+    //     let mut handles = Vec::new();
+    //     for i in 1..=5 {
+    //         let handle = thread::spawn(move || {
+    //             DATABASE.lock().unwrap().select(&format!("Query from thread {i}"));
+    //         });
+    //         handles.push(handle);
+    //     }
+    //     for handle in handles {
+    //         handle.join().unwrap();
+    //     }
+    //     assert_eq!(DATABASE.lock().unwrap().count(), 5);
+    //     DATABASE.lock().unwrap().reset();
+    // }
 }

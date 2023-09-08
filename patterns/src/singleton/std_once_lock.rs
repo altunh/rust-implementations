@@ -1,8 +1,7 @@
 //! This implementation of Singleton uses `std::sync::OnceLock`.
 //! OnceLock is thread-safe and can be used in statics.
-//! Borrow rules for the value can be checked at compile time using the `get` and `get_mut` methods.
 //! To introduce mutability, use either a Mutex or an RwLock
-//! To use across threads, wrap it with Arc.
+//! To use a nonstatic singleton variable across threads, wrap it with Arc.
 
 #[cfg(test)]
 mod tests {
@@ -10,28 +9,57 @@ mod tests {
     use std::sync::{Arc, Mutex, OnceLock};
     use std::thread;
 
-    /// OnceLock returns an Option on `OnceLock::get`
+    // OnceLock is stable and can be used with statics.
     #[test]
-    #[should_panic]
-    fn oncelock_immutable() {
+    fn oncelock_static_immut() {
         static DATABASE: OnceLock<Database> = OnceLock::new();
         assert!(DATABASE.get().is_none());
 
         let db = DATABASE.get_or_init(|| Database::new());
-        db.select("Query with a shared reference");
+        assert!(DATABASE.get().is_some());
+
+        db.query_immut("from main thread");
+        assert_eq!(db.count_mut(), 0);
     }
 
-    /// Immutable static variable, cannot be obtained mutably.
-    /// Obtaining shared references is safe and can be used across threads.
+    /// OnceLock is thread-safe, but static mut requires unsafe code.
     #[test]
-    fn oncelock_immutable_concurrent() {
-        static DATABASE: OnceLock<Database> = OnceLock::new();
+    fn oncelock_static_mut_unsafe() {
+        static mut DATABASE: OnceLock<Database> = OnceLock::new();
+        unsafe { DATABASE.get_or_init(|| Database::new()) };
 
         let mut handles = Vec::new();
-        for i in 1..=5 {
+        for i in 1..=100 {
             let handle = thread::spawn(move || {
-                let db = DATABASE.get_or_init(|| Database::new());
-                db.select(&format!("Query from thread {i}"));
+                if i % 2 == 0 {
+                    unsafe { DATABASE.get() }
+                        .unwrap()
+                        .query_immut(&format!("from thread {i}"));
+                } else {
+                    unsafe { DATABASE.get_mut() }
+                        .unwrap()
+                        .query_mut(&format!("from thread {i}"));
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        assert_eq!(unsafe { DATABASE.get() }.unwrap().count_mut(), 50);
+    }
+
+    /// You can introduce mutability to a static OnceLock using Mutex or RwLock
+    #[test]
+    fn oncelock_static_mut_safe() {
+        static DATABASE: OnceLock<Mutex<Database>> = OnceLock::new();
+
+        let mut handles = Vec::new();
+        for i in 1..=100 {
+            let handle = thread::spawn(move || {
+                let db = DATABASE.get_or_init(|| Mutex::new(Database::new()));
+                db.lock().unwrap().query_mut(&format!("from thread {i}"));
             });
             handles.push(handle);
         }
@@ -39,32 +67,23 @@ mod tests {
         handles
             .into_iter()
             .for_each(|handle| handle.join().unwrap());
+        assert_eq!(DATABASE.get().unwrap().lock().unwrap().count_mut(), 100);
     }
 
-    /// Mutable static variables require unsafe code.
-    /// You can introduce mutability to the singleton using a Mutex or an RwLock.
+    /// For nonstatic variables, to safely share and protect the OnceLock data between threads use Arc<Mutex<Data>>
     #[test]
-    fn oncelock_mutable() {
-        static DATABASE: OnceLock<Mutex<Database>> = OnceLock::new();
-        let db = DATABASE.get_or_init(|| Mutex::new(Database::new()));
-
-        let mut db = db.lock().unwrap();
-        db.insert("Query with an exclusive reference");
-    }
-
-    /// For concurrency, introduce Arc and protect it with either a Mutex or an RwLock.
-    #[test]
-    fn oncelock_mutable_concurrent() {
-        static DATABASE: OnceLock<Arc<Mutex<Database>>> = OnceLock::new();
+    fn oncelock_nonstatic_safe() {
+        let database: OnceLock<Arc<Mutex<Database>>> = OnceLock::new();
+        let db = database.get_or_init(|| Arc::new(Mutex::new(Database::new())));
+        assert_eq!(db.lock().unwrap().count_mut(), 0);
 
         let mut handles = Vec::new();
-        for i in 1..=5 {
-            let db = DATABASE.get_or_init(|| Arc::new(Mutex::new(Database::new())));
-            let db = Arc::clone(db);
+        for i in 1..=100 {
+            let db = Arc::clone(database.get().unwrap());
             let handle = thread::spawn(move || {
                 db.lock()
                     .unwrap()
-                    .insert(&format!("Exclusive reference {i}"));
+                    .query_mut(&format!("Exclusive reference {i}"));
             });
             handles.push(handle);
         }
@@ -72,5 +91,6 @@ mod tests {
         handles
             .into_iter()
             .for_each(|handle| handle.join().unwrap());
+        assert_eq!(database.get().unwrap().lock().unwrap().count_mut(), 100);
     }
 }
