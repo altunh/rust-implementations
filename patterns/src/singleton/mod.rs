@@ -6,8 +6,7 @@ use std::sync::atomic::Ordering;
 
 mod lazy_static;
 mod once_cell_lazy;
-mod once_cell_lazy_mutex;
-mod std_once_lock;
+mod once_lock;
 
 /// Public struct with a private field
 /// This struct can be accessed outside of the module, but not constructed due to private fields.

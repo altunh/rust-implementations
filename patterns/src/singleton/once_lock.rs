@@ -64,9 +64,9 @@ mod tests {
             handles.push(handle);
         }
 
-        handles
-            .into_iter()
-            .for_each(|handle| handle.join().unwrap());
+        for handle in handles {
+            handle.join().unwrap();
+        }
         assert_eq!(DATABASE.get().unwrap().lock().unwrap().count_mut(), 100);
     }
 
@@ -88,9 +88,9 @@ mod tests {
             handles.push(handle);
         }
 
-        handles
-            .into_iter()
-            .for_each(|handle| handle.join().unwrap());
+        for handle in handles {
+            handle.join().unwrap();
+        }
         assert_eq!(database.get().unwrap().lock().unwrap().count_mut(), 100);
     }
 }
