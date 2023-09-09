@@ -14,6 +14,8 @@ lazy_static! {
 #[cfg(test)]
 mod tests {
     use super::DATABASE;
+    use crate::singleton::SaferDatabase;
+    use lazy_static::lazy_static;
     use std::thread;
 
     #[test]
@@ -23,6 +25,26 @@ mod tests {
         db.query_mut("from main thread");
         assert_eq!(db.count_mut(), 1);
         db.reset();
+    }
+
+    #[test]
+    fn lazy_static_atomic() {
+        lazy_static! {
+            static ref DB: SaferDatabase = SaferDatabase::new();
+        }
+
+        let mut handles = Vec::new();
+        for i in 1..=100 {
+            let handle = thread::spawn(move || {
+                DB.query_immut(&format!("from thread {i}"));
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        assert_eq!(DB.count(), 100);
     }
 
     #[test]

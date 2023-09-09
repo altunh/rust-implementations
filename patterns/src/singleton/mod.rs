@@ -37,14 +37,14 @@ impl SaferDatabase {
     #[allow(dead_code)]
     pub fn query_immut(&self, sql: &str) {
         self.add_one();
-        println!("Select Query: {sql}");
+        println!("Query with a shared reference: {}", sql);
     }
 
     /// Logs an insert query with an exclusive reference
     #[allow(dead_code)]
     pub fn query_mut(&mut self, sql: &str) {
         self.add_one();
-        println!("Insert Query: {sql}");
+        println!("Query with an exclusive reference: {}", sql);
     }
 
     /// Returns the number of queies requested
