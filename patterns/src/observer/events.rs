@@ -52,7 +52,6 @@ impl<T> Clone for ListenerCell<T> {
     }
 }
 
-#[derive(Eq)]
 pub struct ListenerRef {
     weak: Weak<RefCell<dyn ListenerUpdate>>,
 }
@@ -83,6 +82,8 @@ impl ListenerRef {
         }
     }
 }
+
+impl Eq for ListenerRef {}
 
 impl PartialEq for ListenerRef {
     fn eq(&self, other: &Self) -> bool {
